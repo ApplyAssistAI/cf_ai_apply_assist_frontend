@@ -1,7 +1,9 @@
+name: Deploy
 on: [push]
 
 jobs:
   deploy:
+    environment: wrangler-deploy
     runs-on: ubuntu-latest
     name: Deploy
     permissions:
