@@ -32,7 +32,12 @@ const toolsRequiringConfirmation: (keyof typeof tools)[] = [
   "getWeatherInformation"
 ];
 
+interface LambdaResponse {
+  response: string
+}
+
 export default function Chat() {
+  const [agentResponse, setAgentResponse] = useState("no response");
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     // Check localStorage first, default to dark if not found
     const savedTheme = localStorage.getItem("theme");
@@ -45,6 +50,23 @@ export default function Chat() {
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
+
+  useEffect(() => {
+    fetch("https://mu3f5l24wq2jut666xkv2ixhzu0xzyby.lambda-url.eu-north-1.on.aws/", {
+      method: "POST",
+      body: JSON.stringify({
+        "secret": "",
+        "prompt": "Write me a Haiku about AWS."
+      })
+    })
+      .then((response): Promise<LambdaResponse> => response.json())
+      .then((response) => setAgentResponse(response["response"]))
+      .catch((error) => console.error(error));
+  }, []);
+
+  // useEffect(() => {
+  //   console.log(import.meta.env.VITE_AWS_SECRET)
+  // }, []);
 
   useEffect(() => {
     // Apply theme class on mount and when theme changes
@@ -203,8 +225,7 @@ export default function Chat() {
                   </div>
                   <h3 className="font-semibold text-lg">Welcome to AI Chat</h3>
                   <p className="text-muted-foreground text-sm">
-                    Start a conversation with your AI assistant. Try asking
-                    about:
+                    AWS test: { agentResponse }
                   </p>
                   <ul className="text-sm text-left space-y-2">
                     <li className="flex items-center gap-2">
