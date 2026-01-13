@@ -1,19 +1,14 @@
 /** biome-ignore-all lint/correctness/useUniqueElementIds: it's alright */
-import { useEffect, useState, useRef, useCallback, use } from "react";
-import { useAgent } from "agents/react";
-import { isStaticToolUIPart } from "ai";
-import { useAgentChat } from "@cloudflare/ai-chat/react";
-import type { UIMessage } from "@ai-sdk/react";
-import type { tools } from "./tools";
+import { useEffect, useState, useRef, useCallback } from "react";
+import * as pdfjsLib from "pdfjs-dist";
+import PdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 // Component imports
 import { Button } from "@/components/button/Button";
 import { Card } from "@/components/card/Card";
 import { Avatar } from "@/components/avatar/Avatar";
 import { Toggle } from "@/components/toggle/Toggle";
-import { Textarea } from "@/components/textarea/Textarea";
 import { MemoizedMarkdown } from "@/components/memoized-markdown";
-import { ToolInvocationCard } from "@/components/tool-invocation-card/ToolInvocationCard";
 
 // Icon imports
 import {
@@ -23,50 +18,42 @@ import {
   SunIcon,
   TrashIcon,
   PaperPlaneTiltIcon,
-  StopIcon
+  PaperclipIcon
 } from "@phosphor-icons/react";
 
-// List of tools that require human confirmation
-// NOTE: this should match the tools that don't have execute functions in tools.ts
-const toolsRequiringConfirmation: (keyof typeof tools)[] = [
-  "getWeatherInformation"
-];
+// Configure pdf.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = PdfWorker;
 
 interface LambdaResponse {
-  response: string
+  response: string;
 }
 
+interface Message {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  timestamp: Date;
+}
+
+const LAMBDA_URL = import.meta.env.VITE_LAMBDA_URL;
+const MY_AWS_SECRET = import.meta.env.VITE_AWS_SECRET;
+const RESUME_PROMPT = "Analyze this resume and provide feedback.";
+
 export default function Chat() {
-  const [agentResponse, setAgentResponse] = useState("no response");
   const [theme, setTheme] = useState<"dark" | "light">(() => {
-    // Check localStorage first, default to dark if not found
     const savedTheme = localStorage.getItem("theme");
     return (savedTheme as "dark" | "light") || "dark";
   });
   const [showDebug, setShowDebug] = useState(false);
-  const [textareaHeight, setTextareaHeight] = useState("auto");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [attachedPdf, setAttachedPdf] = useState<File | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
-
-  useEffect(() => {
-    fetch("https://mu3f5l24wq2jut666xkv2ixhzu0xzyby.lambda-url.eu-north-1.on.aws/", {
-      method: "POST",
-      body: JSON.stringify({
-        "secret": "",
-        "prompt": "Write me a Haiku about AWS."
-      })
-    })
-      .then((response): Promise<LambdaResponse> => response.json())
-      .then((response) => setAgentResponse(response["response"]))
-      .catch((error) => console.error(error));
-  }, []);
-
-  // useEffect(() => {
-  //   console.log(import.meta.env.VITE_AWS_SECRET)
-  // }, []);
 
   useEffect(() => {
     // Apply theme class on mount and when theme changes
@@ -92,66 +79,95 @@ export default function Chat() {
     setTheme(newTheme);
   };
 
-  const agent = useAgent({
-    agent: "chat"
-  });
-
-  const [agentInput, setAgentInput] = useState("");
-  const handleAgentInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    setAgentInput(e.target.value);
-  };
-
-  const handleAgentSubmit = async (
-    e: React.FormEvent,
-    extraData: Record<string, unknown> = {}
-  ) => {
-    e.preventDefault();
-    if (!agentInput.trim()) return;
-
-    const message = agentInput;
-    setAgentInput("");
-
-    // Send message to agent
-    await sendMessage(
-      {
-        role: "user",
-        parts: [{ type: "text", text: message }]
-      },
-      {
-        body: extraData
-      }
-    );
-  };
-
-  const {
-    messages: agentMessages,
-    addToolResult,
-    clearHistory,
-    status,
-    sendMessage,
-    stop
-  } = useAgentChat<unknown, UIMessage<{ createdAt: string }>>({
-    agent
-  });
-
   // Scroll to bottom when messages change
   useEffect(() => {
-    agentMessages.length > 0 && scrollToBottom();
-  }, [agentMessages, scrollToBottom]);
+    messages.length > 0 && scrollToBottom();
+  }, [messages, scrollToBottom]);
 
-  const pendingToolCallConfirmation = agentMessages.some((m: UIMessage) =>
-    m.parts?.some(
-      (part) =>
-        isStaticToolUIPart(part) &&
-        part.state === "input-available" &&
-        // Manual check inside the component
-        toolsRequiringConfirmation.includes(
-          part.type.replace("tool-", "") as keyof typeof tools
-        )
-    )
-  );
+  const extractTextFromPdf = async (file: File): Promise<string> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const textParts: string[] = [];
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item) => ("str" in item ? item.str : ""))
+        .join(" ");
+      textParts.push(pageText);
+    }
+    console.log(textParts.join("\n"));
+    return textParts.join("\n");
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type === "application/pdf") {
+      setAttachedPdf(file);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!attachedPdf || isProcessing) return;
+
+    setIsProcessing(true);
+
+    // Add user message showing the attached file
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: "user",
+      text: `Processing resume: ${attachedPdf.name}`,
+      timestamp: new Date()
+    };
+    setMessages((prev) => [...prev, userMessage]);
+
+    try {
+      const resumeText = await extractTextFromPdf(attachedPdf);
+      console.log(LAMBDA_URL)
+      const response = await fetch(LAMBDA_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          prompt: RESUME_PROMPT,
+          secret: MY_AWS_SECRET
+          //"resume-text": resumeText
+        })
+      });
+
+      const data: LambdaResponse = await response.json();
+
+      const assistantMessage: Message = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        text: data.response,
+        timestamp: new Date()
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      const errorMessage: Message = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        text: `Error processing resume: ${error instanceof Error ? error.message : "Unknown error"}`,
+        timestamp: new Date()
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsProcessing(false);
+      setAttachedPdf(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const clearHistory = () => {
+    setMessages([]);
+    setAttachedPdf(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
 
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -159,7 +175,6 @@ export default function Chat() {
 
   return (
     <div className="h-screen w-full p-4 flex justify-center items-center bg-fixed overflow-hidden">
-      <HasOpenAIKey />
       <div className="h-[calc(100vh-2rem)] w-full mx-auto max-w-lg flex flex-col shadow-xl rounded-md overflow-hidden relative border border-neutral-300 dark:border-neutral-800">
         <div className="px-4 py-3 border-b border-neutral-300 dark:border-neutral-800 flex items-center gap-3 sticky top-0 z-10">
           <div className="flex items-center justify-center h-8 w-8">
@@ -181,7 +196,7 @@ export default function Chat() {
           </div>
 
           <div className="flex-1">
-            <h2 className="font-semibold text-base">AI Chat Agent</h2>
+            <h2 className="font-semibold text-base">a³ - Apply Assist AI</h2>
           </div>
 
           <div className="flex items-center gap-2 mr-2">
@@ -216,25 +231,25 @@ export default function Chat() {
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24 max-h-[calc(100vh-10rem)]">
-          {agentMessages.length === 0 && (
+          {messages.length === 0 && (
             <div className="h-full flex items-center justify-center">
               <Card className="p-6 max-w-md mx-auto bg-neutral-100 dark:bg-neutral-900">
                 <div className="text-center space-y-4">
                   <div className="bg-[#F48120]/10 text-[#F48120] rounded-full p-3 inline-flex">
                     <RobotIcon size={24} />
                   </div>
-                  <h3 className="font-semibold text-lg">Welcome to AI Chat</h3>
+                  <h3 className="font-semibold text-lg">Resume Processor</h3>
                   <p className="text-muted-foreground text-sm">
-                    AWS test: { agentResponse }
+                    Attach a PDF resume to get AI-powered analysis and feedback.
                   </p>
                   <ul className="text-sm text-left space-y-2">
                     <li className="flex items-center gap-2">
                       <span className="text-[#F48120]">•</span>
-                      <span>Weather information for any city</span>
+                      <span>Click "Attach PDF" to select your resume</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <span className="text-[#F48120]">•</span>
-                      <span>Local time in different locations</span>
+                      <span>Press send to process and get feedback</span>
                     </li>
                   </ul>
                 </div>
@@ -242,10 +257,10 @@ export default function Chat() {
             </div>
           )}
 
-          {agentMessages.map((m, index) => {
+          {messages.map((m, index) => {
             const isUser = m.role === "user";
             const showAvatar =
-              index === 0 || agentMessages[index - 1]?.role !== m.role;
+              index === 0 || messages[index - 1]?.role !== m.role;
 
             return (
               <div key={m.id}>
@@ -269,91 +284,22 @@ export default function Chat() {
                     )}
 
                     <div>
-                      <div>
-                        {m.parts?.map((part, i) => {
-                          if (part.type === "text") {
-                            return (
-                              // biome-ignore lint/suspicious/noArrayIndexKey: immutable index
-                              <div key={i}>
-                                <Card
-                                  className={`p-3 rounded-md bg-neutral-100 dark:bg-neutral-900 ${
-                                    isUser
-                                      ? "rounded-br-none"
-                                      : "rounded-bl-none border-assistant-border"
-                                  } ${
-                                    part.text.startsWith("scheduled message")
-                                      ? "border-accent/50"
-                                      : ""
-                                  } relative`}
-                                >
-                                  {part.text.startsWith(
-                                    "scheduled message"
-                                  ) && (
-                                    <span className="absolute -top-3 -left-2 text-base">
-                                      🕒
-                                    </span>
-                                  )}
-                                  <MemoizedMarkdown
-                                    id={`${m.id}-${i}`}
-                                    content={part.text.replace(
-                                      /^scheduled message: /,
-                                      ""
-                                    )}
-                                  />
-                                </Card>
-                                <p
-                                  className={`text-xs text-muted-foreground mt-1 ${
-                                    isUser ? "text-right" : "text-left"
-                                  }`}
-                                >
-                                  {formatTime(
-                                    m.metadata?.createdAt
-                                      ? new Date(m.metadata.createdAt)
-                                      : new Date()
-                                  )}
-                                </p>
-                              </div>
-                            );
-                          }
-
-                          if (
-                            isStaticToolUIPart(part) &&
-                            m.role === "assistant"
-                          ) {
-                            const toolCallId = part.toolCallId;
-                            const toolName = part.type.replace("tool-", "");
-                            const needsConfirmation =
-                              toolsRequiringConfirmation.includes(
-                                toolName as keyof typeof tools
-                              );
-
-                            return (
-                              <ToolInvocationCard
-                                // biome-ignore lint/suspicious/noArrayIndexKey: using index is safe here as the array is static
-                                key={`${toolCallId}-${i}`}
-                                toolUIPart={part}
-                                toolCallId={toolCallId}
-                                needsConfirmation={needsConfirmation}
-                                onSubmit={({ toolCallId, result }) => {
-                                  addToolResult({
-                                    tool: part.type.replace("tool-", ""),
-                                    toolCallId,
-                                    output: result
-                                  });
-                                }}
-                                addToolResult={(toolCallId, result) => {
-                                  addToolResult({
-                                    tool: part.type.replace("tool-", ""),
-                                    toolCallId,
-                                    output: result
-                                  });
-                                }}
-                              />
-                            );
-                          }
-                          return null;
-                        })}
-                      </div>
+                      <Card
+                        className={`p-3 rounded-md bg-neutral-100 dark:bg-neutral-900 ${
+                          isUser
+                            ? "rounded-br-none"
+                            : "rounded-bl-none border-assistant-border"
+                        }`}
+                      >
+                        <MemoizedMarkdown id={m.id} content={m.text} />
+                      </Card>
+                      <p
+                        className={`text-xs text-muted-foreground mt-1 ${
+                          isUser ? "text-right" : "text-left"
+                        }`}
+                      >
+                        {formatTime(m.timestamp)}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -365,69 +311,43 @@ export default function Chat() {
 
         {/* Input Area */}
         <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleAgentSubmit(e, {
-              annotations: {
-                hello: "world"
-              }
-            });
-            setTextareaHeight("auto"); // Reset height after submission
-          }}
+          onSubmit={handleSubmit}
           className="p-3 bg-neutral-50 absolute bottom-0 left-0 right-0 z-10 border-t border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900"
         >
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept=".pdf,application/pdf"
+            onChange={handleFileChange}
+            className="hidden"
+          />
           <div className="flex items-center gap-2">
             <div className="flex-1 relative">
-              <Textarea
-                disabled={pendingToolCallConfirmation}
-                placeholder={
-                  pendingToolCallConfirmation
-                    ? "Please respond to the tool confirmation above..."
-                    : "Send a message..."
-                }
-                className="flex w-full border border-neutral-200 dark:border-neutral-700 px-3 py-2  ring-offset-background placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-300 dark:focus-visible:ring-neutral-700 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm min-h-[24px] max-h-[calc(75dvh)] overflow-hidden resize-none rounded-2xl text-base! pb-10 dark:bg-neutral-900"
-                value={agentInput}
-                onChange={(e) => {
-                  handleAgentInputChange(e);
-                  // Auto-resize the textarea
-                  e.target.style.height = "auto";
-                  e.target.style.height = `${e.target.scrollHeight}px`;
-                  setTextareaHeight(`${e.target.scrollHeight}px`);
-                }}
-                onKeyDown={(e) => {
-                  if (
-                    e.key === "Enter" &&
-                    !e.shiftKey &&
-                    !e.nativeEvent.isComposing
-                  ) {
-                    e.preventDefault();
-                    handleAgentSubmit(e as unknown as React.FormEvent);
-                    setTextareaHeight("auto"); // Reset height on Enter submission
-                  }
-                }}
-                rows={2}
-                style={{ height: textareaHeight }}
-              />
-              <div className="absolute bottom-0 right-0 p-2 w-fit flex flex-row justify-end">
-                {status === "submitted" || status === "streaming" ? (
-                  <button
-                    type="button"
-                    onClick={stop}
-                    className="inline-flex items-center cursor-pointer justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 rounded-full p-1.5 h-fit border border-neutral-200 dark:border-neutral-800"
-                    aria-label="Stop generation"
-                  >
-                    <StopIcon size={16} />
-                  </button>
-                ) : (
-                  <button
-                    type="submit"
-                    className="inline-flex items-center cursor-pointer justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 rounded-full p-1.5 h-fit border border-neutral-200 dark:border-neutral-800"
-                    disabled={pendingToolCallConfirmation || !agentInput.trim()}
-                    aria-label="Send message"
-                  >
-                    <PaperPlaneTiltIcon size={16} />
-                  </button>
-                )}
+              <div className="flex w-full border border-neutral-200 dark:border-neutral-700 px-3 py-2 ring-offset-background rounded-2xl min-h-[60px] items-center dark:bg-neutral-900">
+                <span className="text-neutral-500 dark:text-neutral-400 text-sm">
+                  {attachedPdf
+                    ? `Selected: ${attachedPdf.name}`
+                    : "No PDF attached"}
+                </span>
+              </div>
+              <div className="absolute bottom-0 right-0 p-2 w-fit flex flex-row justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isProcessing}
+                  className="inline-flex items-center cursor-pointer justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 rounded-full p-1.5 h-fit border border-neutral-200 dark:border-neutral-800"
+                  aria-label="Attach PDF"
+                >
+                  <PaperclipIcon size={16} />
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center cursor-pointer justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 rounded-full p-1.5 h-fit border border-neutral-200 dark:border-neutral-800"
+                  disabled={!attachedPdf || isProcessing}
+                  aria-label="Process resume"
+                >
+                  <PaperPlaneTiltIcon size={16} />
+                </button>
               </div>
             </div>
           </div>
@@ -435,78 +355,4 @@ export default function Chat() {
       </div>
     </div>
   );
-}
-
-const hasOpenAiKeyPromise = fetch("/check-open-ai-key").then((res) =>
-  res.json<{ success: boolean }>()
-);
-
-function HasOpenAIKey() {
-  const hasOpenAiKey = use(hasOpenAiKeyPromise);
-
-  if (!hasOpenAiKey.success) {
-    return (
-      <div className="fixed top-0 left-0 right-0 z-50 bg-red-500/10 backdrop-blur-sm">
-        <div className="max-w-3xl mx-auto p-4">
-          <div className="bg-white dark:bg-neutral-900 rounded-lg shadow-lg border border-red-200 dark:border-red-900 p-4">
-            <div className="flex items-start gap-3">
-              <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-full">
-                <svg
-                  className="w-5 h-5 text-red-600 dark:text-red-400"
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-labelledby="warningIcon"
-                >
-                  <title id="warningIcon">Warning Icon</title>
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="8" x2="12" y2="12" />
-                  <line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2">
-                  OpenAI API Key Not Configured
-                </h3>
-                <p className="text-neutral-600 dark:text-neutral-300 mb-1">
-                  Requests to the API, including from the frontend UI, will not
-                  work until an OpenAI API key is configured.
-                </p>
-                <p className="text-neutral-600 dark:text-neutral-300">
-                  Please configure an OpenAI API key by setting a{" "}
-                  <a
-                    href="https://developers.cloudflare.com/workers/configuration/secrets/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-red-600 dark:text-red-400"
-                  >
-                    secret
-                  </a>{" "}
-                  named{" "}
-                  <code className="bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 rounded text-red-600 dark:text-red-400 font-mono text-sm">
-                    OPENAI_API_KEY
-                  </code>
-                  . <br />
-                  You can also use a different model provider by following these{" "}
-                  <a
-                    href="https://github.com/cloudflare/agents-starter?tab=readme-ov-file#use-a-different-ai-model-provider"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-red-600 dark:text-red-400"
-                  >
-                    instructions.
-                  </a>
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-  return null;
 }
