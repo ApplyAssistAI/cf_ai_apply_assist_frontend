@@ -1,0 +1,39 @@
+name: Deploy to Cloudflare                                                                                                                                19:09:45 [19/1344]
+on:                                                                                                                                                                       
+    push:                                                                                                                                                                     
+      branches:                                                                                                                                                               
+        - main                                                                                                                                                                
+    workflow_dispatch:                                                                                                                                                        
+                                                                                                                                                                              
+  jobs:                                                                                                                                                                       
+    check:                                                                                                                                                                    
+      runs-on: ubuntu-24.04                                                                                                                                                   
+      timeout-minutes: 5                                                                                                                                                      
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-node@v4
+          with:
+            node-version: '22'
+            cache: 'npm'
+        - run: npm ci
+        - run: npm run check
+
+    deploy:
+      needs: check
+      runs-on: ubuntu-24.04
+      timeout-minutes: 10
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-node@v4
+          with:
+            node-version: '22'
+            cache: 'npm'
+        - run: npm ci
+        - run: npm run build
+
+        - name: Deploy to Cloudflare Workers
+          uses: cloudflare/wrangler-action@v3
+          with:
+            apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+            accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+            command: deploy
