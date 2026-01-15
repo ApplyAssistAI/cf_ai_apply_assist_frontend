@@ -25,6 +25,7 @@ jobs:
   deploy:
     needs: check
     runs-on: ubuntu-24.04
+    environment: wrangler-deploy
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
