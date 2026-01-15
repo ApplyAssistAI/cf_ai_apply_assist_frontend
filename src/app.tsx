@@ -336,14 +336,18 @@ export default function Chat() {
                   <div className="bg-[#F48120]/10 text-[#F48120] rounded-full p-3 inline-flex">
                     <RobotIcon size={24} />
                   </div>
-                  <h3 className="font-semibold text-lg">Resume Processor</h3>
+                  <h3 className="font-semibold text-lg">Let's begin!</h3>
                   <p className="text-muted-foreground text-sm">
                     Attach a PDF resume to get AI-powered analysis and feedback.
                   </p>
                   <ul className="text-sm text-left space-y-2">
                     <li className="flex items-center gap-2">
                       <span className="text-[#F48120]">•</span>
-                      <span>Click "Attach PDF" to select your resume</span>
+                      <span>Enter the URL for the job posting that interests you</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="text-[#F48120]">•</span>
+                      <span>Click the paperclip icon to select your resume</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <span className="text-[#F48120]">•</span>
