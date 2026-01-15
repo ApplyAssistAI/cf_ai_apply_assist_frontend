@@ -35,8 +35,12 @@ interface Message {
   timestamp: Date;
 }
 
-const LAMBDA_URL = import.meta.env.VITE_LAMBDA_URL;
-const MY_AWS_SECRET = import.meta.env.VITE_AWS_SECRET;
+const LOADING_CAPTIONS = [
+  "Scouring the web..",
+  "Consulting applicants' advice..",
+  "Compiling sources..",
+  "Reviewing your resume.."
+];
 
 export default function Chat() {
   const [theme, setTheme] = useState<"dark" | "light">(() => {
@@ -44,10 +48,21 @@ export default function Chat() {
     return (savedTheme as "dark" | "light") || "dark";
   });
   const [showDebug, setShowDebug] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const saved = localStorage.getItem("chat-messages");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return parsed.map((m: Message) => ({
+        ...m,
+        timestamp: new Date(m.timestamp)
+      }));
+    }
+    return [];
+  });
   const [attachedPdf, setAttachedPdf] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [jobPostingUrl, setJobPostingUrl] = useState("");
+  const [loadingCaptionIndex, setLoadingCaptionIndex] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -83,6 +98,25 @@ export default function Chat() {
   useEffect(() => {
     messages.length > 0 && scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // Persist messages to localStorage
+  useEffect(() => {
+    localStorage.setItem("chat-messages", JSON.stringify(messages));
+  }, [messages]);
+
+  // Rotate loading captions every 4 seconds
+  useEffect(() => {
+    if (!isProcessing) {
+      setLoadingCaptionIndex(0);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setLoadingCaptionIndex((prev) => (prev + 1) % LOADING_CAPTIONS.length);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [isProcessing]);
 
   const extractTextFromPdf = async (file: File): Promise<string> => {
     const arrayBuffer = await file.arrayBuffer();
@@ -125,13 +159,12 @@ export default function Chat() {
 
     try {
       const resumeText = await extractTextFromPdf(attachedPdf);
-      console.log(LAMBDA_URL)
-      const response = await fetch(LAMBDA_URL, {
+      const response = await fetch("/api/process-resume", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          "secret": MY_AWS_SECRET,
-          "resume_text": resumeText,
-          "job_posting_url": jobPostingUrl
+          resume_text: resumeText,
+          job_posting_url: jobPostingUrl
         })
       });
 
@@ -164,6 +197,7 @@ export default function Chat() {
 
   const clearHistory = () => {
     setMessages([]);
+    localStorage.removeItem("chat-messages");
     setAttachedPdf(null);
     setJobPostingUrl("");
     if (fileInputRef.current) {
@@ -189,8 +223,14 @@ export default function Chat() {
               <title>a³ - Apply Assist AI</title>
               <defs>
                 <linearGradient id="linearGradient21">
-                  <stop style={{ stopColor: "#000000", stopOpacity: 1 }} offset="0" />
-                  <stop style={{ stopColor: "#000000", stopOpacity: 0 }} offset="1" />
+                  <stop
+                    style={{ stopColor: "#000000", stopOpacity: 1 }}
+                    offset="0"
+                  />
+                  <stop
+                    style={{ stopColor: "#000000", stopOpacity: 0 }}
+                    offset="1"
+                  />
                 </linearGradient>
                 <linearGradient
                   xlinkHref="#linearGradient21"
@@ -202,19 +242,54 @@ export default function Chat() {
                   gradientUnits="userSpaceOnUse"
                 />
               </defs>
-              <g id="layer2" style={{ fill: "#ececec" }} transform="translate(-275.83372,-40.466781)">
-                <path style={{ fill: "#ececec" }} d="M 516.21552,40.466781 502.05204,99.00636 476.8634,295.2967 v 0.0191 l 39.35212,22.72006 z" />
-                <path style={{ fill: "#e6e6e6" }} d="M 516.21552,40.46679 530.379,99.006372 555.56764,295.29671 v 0.0191 l -39.35212,22.72006 z" />
+              <g
+                id="layer2"
+                style={{ fill: "#ececec" }}
+                transform="translate(-275.83372,-40.466781)"
+              >
+                <path
+                  style={{ fill: "#ececec" }}
+                  d="M 516.21552,40.466781 502.05204,99.00636 476.8634,295.2967 v 0.0191 l 39.35212,22.72006 z"
+                />
+                <path
+                  style={{ fill: "#e6e6e6" }}
+                  d="M 516.21552,40.46679 530.379,99.006372 555.56764,295.29671 v 0.0191 l -39.35212,22.72006 z"
+                />
               </g>
-              <g id="use3" style={{ fill: "#ececec" }} transform="translate(-275.83372,-40.466781)">
-                <path style={{ fill: "#999999" }} d="m 516.21552,40.466781 -1.67018,6.902937 V 317.0716 l 1.67018,0.96428 z" />
-                <path style={{ fill: "#b3b3b3" }} d="M 516.21552,40.466781 V 318.03588 l 1.67018,-0.96428 V 47.369718 Z" />
+              <g
+                id="use3"
+                style={{ fill: "#ececec" }}
+                transform="translate(-275.83372,-40.466781)"
+              >
+                <path
+                  style={{ fill: "#999999" }}
+                  d="m 516.21552,40.466781 -1.67018,6.902937 V 317.0716 l 1.67018,0.96428 z"
+                />
+                <path
+                  style={{ fill: "#b3b3b3" }}
+                  d="M 516.21552,40.466781 V 318.03588 l 1.67018,-0.96428 V 47.369718 Z"
+                />
               </g>
-              <use xlinkHref="#layer2" transform="rotate(120,240.38179,277.54988)" />
-              <use xlinkHref="#layer2" transform="rotate(-120,240.38179,277.56899)" />
-              <use xlinkHref="#use3" style={{ fill: "url(#linearGradient22)" }} />
-              <use xlinkHref="#use3" transform="rotate(120,240.38179,277.5691)" />
-              <use xlinkHref="#use3" transform="rotate(-120,240.38179,277.56899)" />
+              <use
+                xlinkHref="#layer2"
+                transform="rotate(120,240.38179,277.54988)"
+              />
+              <use
+                xlinkHref="#layer2"
+                transform="rotate(-120,240.38179,277.56899)"
+              />
+              <use
+                xlinkHref="#use3"
+                style={{ fill: "url(#linearGradient22)" }}
+              />
+              <use
+                xlinkHref="#use3"
+                transform="rotate(120,240.38179,277.5691)"
+              />
+              <use
+                xlinkHref="#use3"
+                transform="rotate(-120,240.38179,277.56899)"
+              />
             </svg>
           </div>
 
@@ -331,7 +406,7 @@ export default function Chat() {
           })}
 
           {isProcessing && (
-            <div className="flex justify-center items-center py-4">
+            <div className="flex flex-col justify-center items-center py-4 gap-3">
               <div className="flex items-end justify-between w-[40px] h-[40px]">
                 <style>
                   {`
@@ -363,6 +438,9 @@ export default function Chat() {
                   }}
                 />
               </div>
+              <p className="text-[#F48120]" style={{ fontSize: "12pt" }}>
+                {LOADING_CAPTIONS[loadingCaptionIndex]}
+              </p>
             </div>
           )}
 
