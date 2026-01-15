@@ -37,7 +37,6 @@ interface Message {
 
 const LAMBDA_URL = import.meta.env.VITE_LAMBDA_URL;
 const MY_AWS_SECRET = import.meta.env.VITE_AWS_SECRET;
-const RESUME_PROMPT = "Analyze this resume and provide feedback.";
 
 export default function Chat() {
   const [theme, setTheme] = useState<"dark" | "light">(() => {
@@ -48,6 +47,7 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [attachedPdf, setAttachedPdf] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [jobPostingUrl, setJobPostingUrl] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -114,11 +114,11 @@ export default function Chat() {
 
     setIsProcessing(true);
 
-    // Add user message showing the attached file
+    // Add user message showing the attached file and URL
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
-      text: `Processing resume: ${attachedPdf.name}`,
+      text: `Processing resume: ${attachedPdf.name}\nJob posting: ${jobPostingUrl || "(no URL provided)"}`,
       timestamp: new Date()
     };
     setMessages((prev) => [...prev, userMessage]);
@@ -129,9 +129,9 @@ export default function Chat() {
       const response = await fetch(LAMBDA_URL, {
         method: "POST",
         body: JSON.stringify({
-          prompt: RESUME_PROMPT,
-          secret: MY_AWS_SECRET
-          //"resume-text": resumeText
+          "secret": MY_AWS_SECRET,
+          "resume_text": resumeText,
+          "job_posting_url": jobPostingUrl
         })
       });
 
@@ -155,6 +155,7 @@ export default function Chat() {
     } finally {
       setIsProcessing(false);
       setAttachedPdf(null);
+      setJobPostingUrl("");
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -164,6 +165,7 @@ export default function Chat() {
   const clearHistory = () => {
     setMessages([]);
     setAttachedPdf(null);
+    setJobPostingUrl("");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -181,17 +183,38 @@ export default function Chat() {
             <svg
               width="28px"
               height="28px"
-              className="text-[#F48120]"
-              data-icon="agents"
+              data-icon="a3"
+              viewBox="0 0 480.76368 416.35364"
             >
-              <title>Cloudflare Agents</title>
-              <symbol id="ai:local:agents" viewBox="0 0 80 79">
-                <path
-                  fill="currentColor"
-                  d="M69.3 39.7c-3.1 0-5.8 2.1-6.7 5H48.3V34h4.6l4.5-2.5c1.1.8 2.5 1.2 3.9 1.2 3.8 0 7-3.1 7-7s-3.1-7-7-7-7 3.1-7 7c0 .9.2 1.8.5 2.6L51.9 30h-3.5V18.8h-.1c-1.3-1-2.9-1.6-4.5-1.9h-.2c-1.9-.3-3.9-.1-5.8.6-.4.1-.8.3-1.2.5h-.1c-.1.1-.2.1-.3.2-1.7 1-3 2.4-4 4 0 .1-.1.2-.1.2l-.3.6c0 .1-.1.1-.1.2v.1h-.6c-2.9 0-5.7 1.2-7.7 3.2-2.1 2-3.2 4.8-3.2 7.7 0 .7.1 1.4.2 2.1-1.3.9-2.4 2.1-3.2 3.5s-1.2 2.9-1.4 4.5c-.1 1.6.1 3.2.7 4.7s1.5 2.9 2.6 4c-.8 1.8-1.2 3.7-1.1 5.6 0 1.9.5 3.8 1.4 5.6s2.1 3.2 3.6 4.4c1.3 1 2.7 1.7 4.3 2.2v-.1q2.25.75 4.8.6h.1c0 .1.1.1.1.1.9 1.7 2.3 3 4 4 .1.1.2.1.3.2h.1c.4.2.8.4 1.2.5 1.4.6 3 .8 4.5.7.4 0 .8-.1 1.3-.1h.1c1.6-.3 3.1-.9 4.5-1.9V62.9h3.5l3.1 1.7c-.3.8-.5 1.7-.5 2.6 0 3.8 3.1 7 7 7s7-3.1 7-7-3.1-7-7-7c-1.5 0-2.8.5-3.9 1.2l-4.6-2.5h-4.6V48.7h14.3c.9 2.9 3.5 5 6.7 5 3.8 0 7-3.1 7-7s-3.1-7-7-7m-7.9-16.9c1.6 0 3 1.3 3 3s-1.3 3-3 3-3-1.3-3-3 1.4-3 3-3m0 41.4c1.6 0 3 1.3 3 3s-1.3 3-3 3-3-1.3-3-3 1.4-3 3-3M44.3 72c-.4.2-.7.3-1.1.3-.2 0-.4.1-.5.1h-.2c-.9.1-1.7 0-2.6-.3-1-.3-1.9-.9-2.7-1.7-.7-.8-1.3-1.7-1.6-2.7l-.3-1.5v-.7q0-.75.3-1.5c.1-.2.1-.4.2-.7s.3-.6.5-.9c0-.1.1-.1.1-.2.1-.1.1-.2.2-.3s.1-.2.2-.3c0 0 0-.1.1-.1l.6-.6-2.7-3.5c-1.3 1.1-2.3 2.4-2.9 3.9-.2.4-.4.9-.5 1.3v.1c-.1.2-.1.4-.1.6-.3 1.1-.4 2.3-.3 3.4-.3 0-.7 0-1-.1-2.2-.4-4.2-1.5-5.5-3.2-1.4-1.7-2-3.9-1.8-6.1q.15-1.2.6-2.4l.3-.6c.1-.2.2-.4.3-.5 0 0 0-.1.1-.1.4-.7.9-1.3 1.5-1.9 1.6-1.5 3.8-2.3 6-2.3q1.05 0 2.1.3v-4.5c-.7-.1-1.4-.2-2.1-.2-1.8 0-3.5.4-5.2 1.1-.7.3-1.3.6-1.9 1s-1.1.8-1.7 1.3c-.3.2-.5.5-.8.8-.6-.8-1-1.6-1.3-2.6-.2-1-.2-2 0-2.9.2-1 .6-1.9 1.3-2.6.6-.8 1.4-1.4 2.3-1.8l1.8-.9-.7-1.9c-.4-1-.5-2.1-.4-3.1s.5-2.1 1.1-2.9q.9-1.35 2.4-2.1c.9-.5 2-.8 3-.7.5 0 1 .1 1.5.2 1 .2 1.8.7 2.6 1.3s1.4 1.4 1.8 2.3l4.1-1.5c-.9-2-2.3-3.7-4.2-4.9q-.6-.3-.9-.6c.4-.7 1-1.4 1.6-1.9.8-.7 1.8-1.1 2.9-1.3.9-.2 1.7-.1 2.6 0 .4.1.7.2 1.1.3V72zm25-22.3c-1.6 0-3-1.3-3-3 0-1.6 1.3-3 3-3s3 1.3 3 3c0 1.6-1.3 3-3 3"
+              <title>a³ - Apply Assist AI</title>
+              <defs>
+                <linearGradient id="linearGradient21">
+                  <stop style={{ stopColor: "#000000", stopOpacity: 1 }} offset="0" />
+                  <stop style={{ stopColor: "#000000", stopOpacity: 0 }} offset="1" />
+                </linearGradient>
+                <linearGradient
+                  xlinkHref="#linearGradient21"
+                  id="linearGradient22"
+                  x1="514.54535"
+                  y1="179.25133"
+                  x2="517.88568"
+                  y2="179.25133"
+                  gradientUnits="userSpaceOnUse"
                 />
-              </symbol>
-              <use href="#ai:local:agents" />
+              </defs>
+              <g id="layer2" style={{ fill: "#ececec" }} transform="translate(-275.83372,-40.466781)">
+                <path style={{ fill: "#ececec" }} d="M 516.21552,40.466781 502.05204,99.00636 476.8634,295.2967 v 0.0191 l 39.35212,22.72006 z" />
+                <path style={{ fill: "#e6e6e6" }} d="M 516.21552,40.46679 530.379,99.006372 555.56764,295.29671 v 0.0191 l -39.35212,22.72006 z" />
+              </g>
+              <g id="use3" style={{ fill: "#ececec" }} transform="translate(-275.83372,-40.466781)">
+                <path style={{ fill: "#999999" }} d="m 516.21552,40.466781 -1.67018,6.902937 V 317.0716 l 1.67018,0.96428 z" />
+                <path style={{ fill: "#b3b3b3" }} d="M 516.21552,40.466781 V 318.03588 l 1.67018,-0.96428 V 47.369718 Z" />
+              </g>
+              <use xlinkHref="#layer2" transform="rotate(120,240.38179,277.54988)" />
+              <use xlinkHref="#layer2" transform="rotate(-120,240.38179,277.56899)" />
+              <use xlinkHref="#use3" style={{ fill: "url(#linearGradient22)" }} />
+              <use xlinkHref="#use3" transform="rotate(120,240.38179,277.5691)" />
+              <use xlinkHref="#use3" transform="rotate(-120,240.38179,277.56899)" />
             </svg>
           </div>
 
@@ -288,7 +311,7 @@ export default function Chat() {
                         className={`p-3 rounded-md bg-neutral-100 dark:bg-neutral-900 ${
                           isUser
                             ? "rounded-br-none"
-                            : "rounded-bl-none border-assistant-border"
+                            : "rounded-bl-none border-assistant-border text-justify"
                         }`}
                       >
                         <MemoizedMarkdown id={m.id} content={m.text} />
@@ -306,6 +329,43 @@ export default function Chat() {
               </div>
             );
           })}
+
+          {isProcessing && (
+            <div className="flex justify-center items-center py-4">
+              <div className="flex items-end justify-between w-[40px] h-[40px]">
+                <style>
+                  {`
+                    @keyframes wave {
+                      0%, 100% { height: 8px; }
+                      50% { height: 40px; }
+                    }
+                  `}
+                </style>
+                <div
+                  className="w-[8px] bg-[#F48120]"
+                  style={{
+                    animation: "wave 0.9s ease-in-out infinite",
+                    animationDelay: "0s"
+                  }}
+                />
+                <div
+                  className="w-[8px] bg-[#F48120]"
+                  style={{
+                    animation: "wave 0.9s ease-in-out infinite",
+                    animationDelay: "0.15s"
+                  }}
+                />
+                <div
+                  className="w-[8px] bg-[#F48120]"
+                  style={{
+                    animation: "wave 0.9s ease-in-out infinite",
+                    animationDelay: "0.3s"
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           <div ref={messagesEndRef} />
         </div>
 
@@ -323,14 +383,22 @@ export default function Chat() {
           />
           <div className="flex items-center gap-2">
             <div className="flex-1 relative">
-              <div className="flex w-full border border-neutral-200 dark:border-neutral-700 px-3 py-2 ring-offset-background rounded-2xl min-h-[60px] items-center dark:bg-neutral-900">
-                <span className="text-neutral-500 dark:text-neutral-400 text-sm">
-                  {attachedPdf
-                    ? `Selected: ${attachedPdf.name}`
-                    : "No PDF attached"}
-                </span>
+              <div className="flex w-full border border-neutral-200 dark:border-neutral-700 px-3 pt-2 pb-10 ring-offset-background rounded-2xl min-h-[60px] items-start dark:bg-neutral-900">
+                <input
+                  type="text"
+                  value={jobPostingUrl}
+                  onChange={(e) => setJobPostingUrl(e.target.value)}
+                  placeholder="Enter the job posting URL"
+                  disabled={isProcessing}
+                  className="flex-1 bg-transparent outline-none text-sm placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
+                />
               </div>
-              <div className="absolute bottom-0 right-0 p-2 w-fit flex flex-row justify-end gap-2">
+              <div className="absolute bottom-0 right-0 p-2 w-fit flex flex-row justify-end items-center gap-2">
+                {attachedPdf && (
+                  <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate max-w-[150px]">
+                    {attachedPdf.name}
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}

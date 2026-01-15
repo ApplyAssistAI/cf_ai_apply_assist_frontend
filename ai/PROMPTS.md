@@ -1,6 +1,6 @@
 #1:
 
-Model: Opus 4.5 (Claude Code**[**)
+Model: Opus 4.5 (Claude Code)
 
 Prompt:
 
@@ -45,3 +45,15 @@ AWS lambda function, the JSON schema for what it accepts (inside the body, loade
 `body = json.loads(event["body"])`) is: body["prompt"] - the prompt, which I will preconfigure here;
 body["resume-text"] - the text extracted from the resume.
 Now, I have looked over your proposed changes and you may proceed with them. I will test the functionality afterwards.
+
+#3
+I believe there is one thing that we can do to improve the UX and feel of the application. When the application 
+is processing the resume, that is - when the user hits submit with the URL and the resume, and then text is extracted 
+and a request is sent, etc. - we would want a loading icon to display in the middle. I would like the loading icon to 
+be composed of three square dots in the color orange. The dots change in height would represent loading. At the 
+beginning, the left dot would grow taller, then, while it is at its highest, the second dot begins to grow in height, 
+then, the first begins to decrease in height and when the second one is at its heighest the third one begins to increase 
+in height. This is a classic loading icon scheme, you can think of it acting as a wave, moving to the right, with 
+the crest of the wave corresponding to the square dot being extended in height to its maximum. I want the loading 
+icon to be a 40 px square, when the width of the squares and the space between them as well as the maximum height 
+achieved during loading is taken into account.
