@@ -48,6 +48,9 @@ the right fit.
 │   └── styles.css     # UI styling
 ```
 
+## Full app sequence diagram:
+![diagram](/assets/app_sequence_diagram.png)
+
 ## License
 
 MIT
