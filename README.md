@@ -3,6 +3,7 @@
     
 ### `a³ - Apply Assist AI`
 #### [Link to deployed app](https://pages-frontend.konradmstlr.workers.dev)
+#### [Link to backend source](https://github.com/ApplyAssistAI/smolagents-backend)
 </div>
 
 An agentic app to perfect your resume for your next job application, powered by **Cloudflare Developer Platform** and
