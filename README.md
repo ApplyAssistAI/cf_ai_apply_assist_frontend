@@ -2,9 +2,8 @@
     <img src="./a3.svg" alt="fabriclogo" width="180" height="180"/>
     
 ### `a³ - Apply Assist AI`
+#### [Link to deployed app](https://pages-frontend.konradmstlr.workers.dev)
 </div>
-
-<a href="https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/agents-starter"><img src="https://deploy.workers.cloudflare.com/button" alt="Deployed to Cloudflare"/></a>
 
 An agentic app to perfect your resume for your next job application, powered by **Cloudflare Developer Platform** and
 **HuggingFace smolagents**.
