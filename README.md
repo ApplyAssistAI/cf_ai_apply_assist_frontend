@@ -3,7 +3,6 @@
     
 ### `a³ - Apply Assist AI`
 #### [Link to deployed app](https://pages-frontend.konradmstlr.workers.dev)
-#### [Link to backend source](https://github.com/ApplyAssistAI/smolagents-backend)
 </div>
 
 An agentic app to perfect your resume for your next job application, powered by **Cloudflare Developer Platform** and
@@ -13,6 +12,8 @@ Visit the demo site, **attach your resume & the job posting URL**, and hit send!
 personalized feedback.
 
 This project adapts the [Chat Agent starter kit](https://github.com/cloudflare/agents-starter).
+
+#### [Link to backend source](https://github.com/ApplyAssistAI/smolagents-backend)
 
 ## Features
 
